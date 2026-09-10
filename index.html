@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BusyBoard — Office Door Status</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="app" id="app">
+
+  <!-- DISPLAY AREA -->
+  <section class="display" id="display">
+    <button class="icon-btn dark-toggle" id="darkToggle" title="Toggle dark mode (D)">🌙</button>
+    <button class="icon-btn fullscreen-toggle" id="fullscreenToggle" title="Toggle fullscreen (F)">⛶</button>
+
+    <div class="display-content">
+      <div class="status-icon" id="statusIcon">●</div>
+      <h1 class="status-text" id="statusText">Available</h1>
+      <p class="status-note" id="statusNote"></p>
+      <div class="time" id="clock">--:--:--</div>
+      <div class="date" id="dateLine">—</div>
+      <div class="timer-banner" id="timerBanner" hidden></div>
+    </div>
+
+    <div class="brand">BusyBoard</div>
+
+    <!-- Remote URL bar — shown only in server mode -->
+    <div class="remote-bar" id="remoteBar" hidden>
+      <span class="remote-bar-label">📱 Remote URL:</span>
+      <span class="remote-bar-url" id="remoteUrl"></span>
+    </div>
+  </section>
+
+  <!-- CONTROL PANEL -->
+  <aside class="panel" id="panel">
+    <div class="panel-header">
+      <h2>Set Status</h2>
+      <button class="icon-btn panel-toggle" id="panelToggle" title="Hide panel">»</button>
+    </div>
+
+    <div class="status-grid" id="statusGrid">
+      <!-- buttons injected by app.js -->
+    </div>
+
+    <div class="panel-section">
+      <h3>Custom Message</h3>
+      <div class="custom-message-row">
+        <input 
+          type="text" 
+          id="customMessageInput" 
+          placeholder="e.g., Back at 3pm, On lunch break..." 
+          maxlength="60"
+          autocomplete="off"
+        />
+        <button class="icon-btn-small clear-message" id="clearMessageBtn" title="Clear message">✕</button>
+      </div>
+      <p class="hint"><span id="charCount">0</span>/60 characters • Supports emoji 😊</p>
+    </div>
+
+    <div class="panel-section">
+      <h3>Auto Reset</h3>
+      <div class="auto-reset-row">
+        <select id="autoResetSelect">
+          <option value="0">Off</option>
+          <option value="5">5 minutes</option>
+          <option value="15">15 minutes</option>
+          <option value="30">30 minutes</option>
+          <option value="60">1 hour</option>
+          <option value="120">2 hours</option>
+        </select>
+        <select id="autoResetTarget">
+          <!-- injected -->
+        </select>
+      </div>
+      <p class="hint" id="autoResetHint">No auto reset scheduled.</p>
+    </div>
+
+    <div class="panel-section">
+      <h3>Shortcuts</h3>
+      <ul class="shortcuts">
+        <li><kbd>1</kbd>–<kbd>9</kbd> Set status</li>
+        <li><kbd>F</kbd> Fullscreen</li>
+        <li><kbd>D</kbd> Dark mode</li>
+        <li><kbd>P</kbd> Show/hide panel</li>
+      </ul>
+    </div>
+
+    <div class="panel-footer">Status persists locally — no server, no install.</div>
+  </aside>
+
+  <button class="panel-show-btn" id="panelShowBtn" hidden title="Show panel (P)">☰ Controls</button>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
