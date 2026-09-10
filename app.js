@@ -332,7 +332,12 @@
   function init() {
     buildStatusGrid();
 
+    // Apply saved theme
     applyTheme(localStorage.getItem(STORAGE_KEYS.theme) || 'light');
+
+    // Restore panel visibility state EARLY (before other UI updates)
+    const panelHidden = localStorage.getItem(STORAGE_KEYS.panelHidden) === '1';
+    setPanelHidden(panelHidden);
 
     if (SERVER_MODE) {
       // Fetch current status from server immediately, then poll every 1.5 s
@@ -347,9 +352,6 @@
     initAutoResetControls();
     resumeAutoResetFromStorage();
     initRemoteBar();
-
-    const panelHidden = localStorage.getItem(STORAGE_KEYS.panelHidden) === '1';
-    setPanelHidden(panelHidden);
 
     tickClock();
     setInterval(tickClock, 1000);
