@@ -55,10 +55,12 @@
   const SERVER_MODE = window.location.protocol === 'http:' || window.location.protocol === 'https:';
   const API = SERVER_MODE ? `${window.location.origin}/api/status` : null;
 
-  // Tracks the last status we received from the server so we don't re-render
+  // Tracks the last state we received from the server so we don't re-render
   // unnecessarily on every poll.
   let lastServerStatus = null;
   let lastServerMessage = null;
+  let lastServerPanelHidden = null;
+  let lastServerTheme = null;
 
   function statusByKey(key) {
     return STATUSES.find((s) => s.key === key) || STATUSES[0];
@@ -106,15 +108,42 @@
     }).catch(() => { /* network hiccup — ignore */ });
   }
 
+  function postUIState(updates) {
+    if (!SERVER_MODE) return;
+    fetch(API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates)
+    }).catch(() => { /* network hiccup — ignore */ });
+  }
+
   function pollStatus() {
     fetch(API)
       .then((r) => r.json())
-      .then(({ status, customMessage }) => {
+      .then(({ status, customMessage, panelHidden, theme }) => {
+        // Check what changed
+        const statusChanged = status && status !== lastServerStatus;
         const msgChanged = customMessage !== lastServerMessage;
-        if (status && (status !== lastServerStatus || msgChanged)) {
+        const panelChanged = panelHidden !== undefined && panelHidden !== lastServerPanelHidden;
+        const themeChanged = theme && theme !== lastServerTheme;
+
+        // Update status if changed
+        if (statusChanged || msgChanged) {
           lastServerStatus = status;
           lastServerMessage = customMessage || '';
           applyStatus(status, { skipPost: true, skipAutoReset: true, customMessage: lastServerMessage });
+        }
+
+        // Update panel visibility if changed
+        if (panelChanged) {
+          lastServerPanelHidden = panelHidden;
+          setPanelHidden(panelHidden, { skipPost: true });
+        }
+
+        // Update theme if changed
+        if (themeChanged) {
+          lastServerTheme = theme;
+          applyTheme(theme, { skipPost: true });
         }
       })
       .catch(() => { /* offline — keep showing last known status */ });
@@ -246,7 +275,7 @@
   }
 
   // ── Dark mode ─────────────────────────────────────────────────────────────
-  function applyTheme(theme) {
+  function applyTheme(theme, opts = {}) {
     if (theme === 'dark') {
       document.documentElement.setAttribute('data-theme', 'dark');
       els.darkToggle.textContent = '☀️';
@@ -254,7 +283,13 @@
       document.documentElement.removeAttribute('data-theme');
       els.darkToggle.textContent = '🌙';
     }
-    localStorage.setItem(STORAGE_KEYS.theme, theme);
+    
+    if (SERVER_MODE) {
+      if (!opts.skipPost) postUIState({ theme });
+      lastServerTheme = theme;
+    } else {
+      localStorage.setItem(STORAGE_KEYS.theme, theme);
+    }
   }
 
   function toggleTheme() {
@@ -272,10 +307,16 @@
   }
 
   // ── Panel ─────────────────────────────────────────────────────────────────
-  function setPanelHidden(hidden) {
+  function setPanelHidden(hidden, opts = {}) {
     els.panel.classList.toggle('hidden', hidden);
     els.panelShowBtn.hidden = !hidden;
-    localStorage.setItem(STORAGE_KEYS.panelHidden, hidden ? '1' : '0');
+    
+    if (SERVER_MODE) {
+      if (!opts.skipPost) postUIState({ panelHidden: hidden });
+      lastServerPanelHidden = hidden;
+    } else {
+      localStorage.setItem(STORAGE_KEYS.panelHidden, hidden ? '1' : '0');
+    }
   }
 
   // ── Custom Message ────────────────────────────────────────────────────────
@@ -332,19 +373,39 @@
   function init() {
     buildStatusGrid();
 
-    // Apply saved theme
-    applyTheme(localStorage.getItem(STORAGE_KEYS.theme) || 'light');
-
-    // Restore panel visibility state EARLY (before other UI updates)
-    const panelHidden = localStorage.getItem(STORAGE_KEYS.panelHidden) === '1';
-    setPanelHidden(panelHidden);
-
     if (SERVER_MODE) {
-      // Fetch current status from server immediately, then poll every 1.5 s
-      pollStatus();
+      // In server mode, fetch initial state from server first
+      // This ensures all devices start with the same UI state
+      fetch(API)
+        .then((r) => r.json())
+        .then(({ status, customMessage, panelHidden, theme }) => {
+          // Initialize from server state
+          lastServerStatus = status || 'available';
+          lastServerMessage = customMessage || '';
+          lastServerPanelHidden = panelHidden !== undefined ? panelHidden : false;
+          lastServerTheme = theme || 'light';
+
+          applyTheme(lastServerTheme, { skipPost: true });
+          setPanelHidden(lastServerPanelHidden, { skipPost: true });
+          applyStatus(lastServerStatus, { skipPost: true, skipAutoReset: true, customMessage: lastServerMessage });
+        })
+        .catch(() => {
+          // Fallback to defaults if server is unreachable
+          applyTheme('light', { skipPost: true });
+          setPanelHidden(false, { skipPost: true });
+          applyStatus('available', { skipPost: true });
+        });
+
+      // Then start polling for updates
       setInterval(pollStatus, 1500);
     } else {
+      // Standalone mode: use localStorage
+      const savedTheme = localStorage.getItem(STORAGE_KEYS.theme) || 'light';
+      const panelHidden = localStorage.getItem(STORAGE_KEYS.panelHidden) === '1';
       const saved = localStorage.getItem(STORAGE_KEYS.status) || 'available';
+
+      applyTheme(savedTheme);
+      setPanelHidden(panelHidden);
       applyStatus(saved, { skipAutoReset: true });
     }
 

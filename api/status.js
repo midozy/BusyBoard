@@ -1,7 +1,13 @@
 // Vercel Serverless Function for BusyBoard Status API
-// Note: This is stateless - each user will have their own localStorage state
+// Note: This is stateless - state persists only during function lifetime
+// For true persistence, use Vercel KV or a database
 
-let state = { status: 'available', customMessage: '' };
+let state = { 
+  status: 'available', 
+  customMessage: '',
+  panelHidden: false,
+  theme: 'light'
+};
 
 module.exports = async (req, res) => {
   // CORS headers
@@ -23,13 +29,15 @@ module.exports = async (req, res) => {
   // POST /api/status
   if (req.method === 'POST') {
     try {
-      const { status, customMessage } = req.body;
+      const { status, customMessage, panelHidden, theme } = req.body;
       
-      if (status) {
-        state = {
-          status,
-          customMessage: customMessage || ''
-        };
+      if (status !== undefined || panelHidden !== undefined || theme !== undefined) {
+        // Update only the fields that are provided
+        if (status !== undefined) state.status = status;
+        if (customMessage !== undefined) state.customMessage = customMessage;
+        if (panelHidden !== undefined) state.panelHidden = panelHidden;
+        if (theme !== undefined) state.theme = theme;
+        
         res.status(200).json(state);
       } else {
         res.status(400).json({ error: 'Bad request' });

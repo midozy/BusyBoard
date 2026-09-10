@@ -13,15 +13,24 @@ const STATIC_DIR  = __dirname;
 // ── Persist status to disk so a server restart keeps the last state ──────────
 function readStatus() {
   try { return JSON.parse(fs.readFileSync(STATUS_FILE, 'utf8')); }
-  catch { return { status: 'available', customMessage: '' }; }
+  catch { 
+    return { 
+      status: 'available', 
+      customMessage: '',
+      panelHidden: false,
+      theme: 'light'
+    }; 
+  }
 }
 function writeStatus(obj) {
   fs.writeFileSync(STATUS_FILE, JSON.stringify(obj));
 }
 
 let state = readStatus();
-// Ensure customMessage exists in state
+// Ensure all fields exist in state
 if (!state.customMessage) state.customMessage = '';
+if (state.panelHidden === undefined) state.panelHidden = false;
+if (!state.theme) state.theme = 'light';
 
 // ── MIME types for static files ───────────────────────────────────────────────
 const MIME = {
@@ -65,11 +74,13 @@ const server = http.createServer((req, res) => {
     req.on('end', () => {
       try {
         const parsed = JSON.parse(body);
-        if (parsed.status) {
-          state = { 
-            status: parsed.status,
-            customMessage: parsed.customMessage || ''
-          };
+        if (parsed.status !== undefined || parsed.panelHidden !== undefined || parsed.theme !== undefined) {
+          // Update only the fields that are provided
+          if (parsed.status !== undefined) state.status = parsed.status;
+          if (parsed.customMessage !== undefined) state.customMessage = parsed.customMessage;
+          if (parsed.panelHidden !== undefined) state.panelHidden = parsed.panelHidden;
+          if (parsed.theme !== undefined) state.theme = parsed.theme;
+          
           writeStatus(state);
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify(state));
