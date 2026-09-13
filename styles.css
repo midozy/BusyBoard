@@ -370,26 +370,34 @@ kbd {
   padding-top: 18px;
 }
 
-/* ---------- REMOTE BAR ---------- */
+/* ---------- REMOTE BAR (inside panel) ---------- */
 .remote-bar {
-  position: absolute;
-  bottom: 52px;
-  left: 50%;
-  transform: translateX(-50%);
+  border-top: 1px solid var(--border);
+  padding: 14px 0 4px;
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 7px 16px;
-  border-radius: 8px;
-  background: rgba(0,0,0,0.25);
-  backdrop-filter: blur(6px);
+  flex-direction: column;
+  gap: 6px;
   font-size: 0.82rem;
-  color: rgba(255,255,255,0.9);
-  white-space: nowrap;
 }
 
-.remote-bar-label { font-weight: 600; }
-.remote-bar-url   { font-family: monospace; letter-spacing: 0.03em; }
+.remote-bar-label {
+  font-weight: 700;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.remote-bar-url {
+  font-family: monospace;
+  font-size: 0.88rem;
+  color: var(--text);
+  word-break: break-all;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+}
 
 /* ---------- RESPONSIVE ---------- */
 @media (max-width: 900px) {
