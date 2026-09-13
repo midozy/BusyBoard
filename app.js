@@ -121,16 +121,19 @@
     fetch(API)
       .then((r) => r.json())
       .then(({ status, customMessage, panelHidden, theme }) => {
+        // Normalise so undefined/null/'' all compare as ''
+        const msg = customMessage || '';
+
         // Check what changed
         const statusChanged = status && status !== lastServerStatus;
-        const msgChanged = customMessage !== lastServerMessage;
-        const panelChanged = panelHidden !== undefined && panelHidden !== lastServerPanelHidden;
-        const themeChanged = theme && theme !== lastServerTheme;
+        const msgChanged    = msg !== (lastServerMessage || '');
+        const panelChanged  = panelHidden !== undefined && panelHidden !== lastServerPanelHidden;
+        const themeChanged  = theme && theme !== lastServerTheme;
 
         // Update status if changed
         if (statusChanged || msgChanged) {
           lastServerStatus = status;
-          lastServerMessage = customMessage || '';
+          lastServerMessage = msg;
           applyStatus(status, { skipPost: true, skipAutoReset: true, customMessage: lastServerMessage });
         }
 
@@ -379,34 +382,36 @@
       fetch(API)
         .then((r) => r.json())
         .then(({ status, customMessage, panelHidden, theme }) => {
-          // Initialize from server state
-          lastServerStatus = status || 'available';
-          lastServerMessage = customMessage || '';
+          lastServerStatus      = status || 'available';
+          lastServerMessage     = customMessage || '';
           lastServerPanelHidden = panelHidden !== undefined ? panelHidden : false;
-          lastServerTheme = theme || 'light';
+          lastServerTheme       = theme || 'light';
 
           applyTheme(lastServerTheme, { skipPost: true });
           setPanelHidden(lastServerPanelHidden, { skipPost: true });
           applyStatus(lastServerStatus, { skipPost: true, skipAutoReset: true, customMessage: lastServerMessage });
         })
         .catch(() => {
-          // Fallback to defaults if server is unreachable
           applyTheme('light', { skipPost: true });
           setPanelHidden(false, { skipPost: true });
           applyStatus('available', { skipPost: true });
+        })
+        .finally(() => {
+          // Reveal display only after real state is painted — eliminates initial flash
+          document.getElementById('display').removeAttribute('data-loading');
+          setInterval(pollStatus, 1500);
         });
-
-      // Then start polling for updates
-      setInterval(pollStatus, 1500);
     } else {
       // Standalone mode: use localStorage
-      const savedTheme = localStorage.getItem(STORAGE_KEYS.theme) || 'light';
+      const savedTheme  = localStorage.getItem(STORAGE_KEYS.theme)  || 'light';
       const panelHidden = localStorage.getItem(STORAGE_KEYS.panelHidden) === '1';
-      const saved = localStorage.getItem(STORAGE_KEYS.status) || 'available';
+      const saved       = localStorage.getItem(STORAGE_KEYS.status) || 'available';
 
       applyTheme(savedTheme);
       setPanelHidden(panelHidden);
       applyStatus(saved, { skipAutoReset: true });
+      // No server fetch needed — reveal immediately
+      document.getElementById('display').removeAttribute('data-loading');
     }
 
     initCustomMessage();

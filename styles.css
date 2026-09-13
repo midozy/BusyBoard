@@ -59,9 +59,15 @@ html, body {
   justify-content: center;
   background: linear-gradient(160deg, var(--status-color) 0%, color-mix(in srgb, var(--status-color) 70%, black) 100%);
   color: #fff;
-  transition: background var(--transition);
+  transition: background var(--transition), opacity 0.25s ease;
   text-align: center;
   padding: 40px;
+}
+
+/* Suppress background transition and hide display until first state loads */
+.display[data-loading] {
+  opacity: 0;
+  transition: opacity 0.25s ease;
 }
 
 .display-content {
