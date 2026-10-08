@@ -73,10 +73,12 @@ After deployment, check:
 3. JavaScript works (can change status)
 4. API works: `https://your-url.vercel.app/api/status`
 
-## ⚠️ Important Note
+## 🗄️ Persistent Storage (required)
 
-The serverless function is **stateless** - each function invocation starts fresh. This means:
-- ✅ Perfect for personal boards (localStorage)
-- ❌ Won't work for shared team boards (needs database)
+Serverless functions lose in-memory state on cold starts, so `api/status.js` stores state in **Upstash Redis**:
 
-If you need shared state, let me know and I'll add Vercel KV or Supabase!
+1. Vercel dashboard → your project → **Storage** → **Create Database** → **Upstash (Redis)** → connect it to the project
+2. This injects `KV_REST_API_URL` / `KV_REST_API_TOKEN` (or `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`)
+3. Redeploy
+
+Without these env vars, `/api/status` returns a 500 and the board keeps showing its last known status.

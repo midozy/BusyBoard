@@ -118,9 +118,10 @@
   }
 
   function pollStatus() {
-    fetch(API)
-      .then((r) => r.json())
+    fetch(API, { cache: 'no-store' })
+      .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
       .then(({ status, customMessage, panelHidden, theme }) => {
+        if (!status) return;
         // Normalise so undefined/null/'' all compare as ''
         const msg = customMessage || '';
 
@@ -379,8 +380,8 @@
     if (SERVER_MODE) {
       // In server mode, fetch initial state from server first
       // This ensures all devices start with the same UI state
-      fetch(API)
-        .then((r) => r.json())
+      fetch(API, { cache: 'no-store' })
+        .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
         .then(({ status, customMessage, panelHidden, theme }) => {
           lastServerStatus      = status || 'available';
           lastServerMessage     = customMessage || '';

@@ -1,52 +1,84 @@
 // Vercel Serverless Function for BusyBoard Status API
-// Note: This is stateless - state persists only during function lifetime
-// For true persistence, use Vercel KV or a database
+// State is persisted in Upstash Redis (Vercel Marketplace) so it survives
+// cold starts and is shared across all function instances.
 
-let state = { 
-  status: 'available', 
+const REDIS_URL   = process.env.KV_REST_API_URL   || process.env.UPSTASH_REDIS_REST_URL;
+const REDIS_TOKEN = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
+const STATE_KEY   = 'busyboard:state';
+
+const DEFAULT_STATE = {
+  status: 'available',
   customMessage: '',
   panelHidden: false,
   theme: 'light'
 };
+
+async function redis(command) {
+  const r = await fetch(REDIS_URL, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${REDIS_TOKEN}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(command)
+  });
+  if (!r.ok) throw new Error(`Redis error ${r.status}`);
+  return (await r.json()).result;
+}
+
+async function loadState() {
+  const raw = await redis(['GET', STATE_KEY]);
+  return { ...DEFAULT_STATE, ...(raw ? JSON.parse(raw) : {}) };
+}
+
+async function saveState(state) {
+  await redis(['SET', STATE_KEY, JSON.stringify(state)]);
+}
 
 module.exports = async (req, res) => {
   // CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Cache-Control', 'no-store');
 
   if (req.method === 'OPTIONS') {
     res.status(204).end();
     return;
   }
 
-  // GET /api/status
-  if (req.method === 'GET') {
-    res.status(200).json(state);
+  if (!REDIS_URL || !REDIS_TOKEN) {
+    res.status(500).json({ error: 'Redis is not configured' });
     return;
   }
 
-  // POST /api/status
-  if (req.method === 'POST') {
-    try {
-      const { status, customMessage, panelHidden, theme } = req.body;
-      
-      if (status !== undefined || panelHidden !== undefined || theme !== undefined) {
-        // Update only the fields that are provided
-        if (status !== undefined) state.status = status;
-        if (customMessage !== undefined) state.customMessage = customMessage;
-        if (panelHidden !== undefined) state.panelHidden = panelHidden;
-        if (theme !== undefined) state.theme = theme;
-        
-        res.status(200).json(state);
-      } else {
-        res.status(400).json({ error: 'Bad request' });
-      }
-    } catch (error) {
-      res.status(400).json({ error: 'Invalid JSON' });
+  try {
+    // GET /api/status
+    if (req.method === 'GET') {
+      res.status(200).json(await loadState());
+      return;
     }
-    return;
-  }
 
-  res.status(405).json({ error: 'Method not allowed' });
+    // POST /api/status
+    if (req.method === 'POST') {
+      const { status, customMessage, panelHidden, theme } = req.body || {};
+
+      if (status === undefined && panelHidden === undefined && theme === undefined) {
+        res.status(400).json({ error: 'Bad request' });
+        return;
+      }
+
+      // Update only the fields that are provided
+      const state = await loadState();
+      if (status !== undefined) state.status = status;
+      if (customMessage !== undefined) state.customMessage = customMessage;
+      if (panelHidden !== undefined) state.panelHidden = panelHidden;
+      if (theme !== undefined) state.theme = theme;
+
+      await saveState(state);
+      res.status(200).json(state);
+      return;
+    }
+
+    res.status(405).json({ error: 'Method not allowed' });
+  } catch (error) {
+    res.status(500).json({ error: 'Storage error' });
+  }
 };
