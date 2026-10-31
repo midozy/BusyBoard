@@ -105,7 +105,7 @@
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: key, customMessage })
-    }).catch(() => { /* network hiccup — ignore */ });
+    }).catch(() => {});
   }
 
   function postUIState(updates) {
@@ -114,43 +114,84 @@
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updates)
-    }).catch(() => { /* network hiccup — ignore */ });
+    }).catch(() => {});
   }
 
-  function pollStatus() {
+  // ── SSE + visibility-aware fallback ──────────────────────────────────────
+  // Primary: one persistent SSE connection — server pushes on change only.
+  // Fallback: 10 s poll used only when SSE is unavailable or reconnecting.
+  // Visibility: all updates pause while the tab is hidden; resume on focus.
+
+  let sseSource     = null;
+  let fallbackTimer = null;
+  const FALLBACK_MS = 10000;
+
+  function applyServerState({ status, customMessage, panelHidden, theme }) {
+    if (!status) return;
+    const msg = customMessage || '';
+
+    const statusChanged = status !== lastServerStatus;
+    const msgChanged    = msg    !== (lastServerMessage || '');
+    const panelChanged  = panelHidden !== undefined && panelHidden !== lastServerPanelHidden;
+    const themeChanged  = theme && theme !== lastServerTheme;
+
+    if (statusChanged || msgChanged) {
+      lastServerStatus  = status;
+      lastServerMessage = msg;
+      applyStatus(status, { skipPost: true, skipAutoReset: true, customMessage: msg });
+    }
+    if (panelChanged) {
+      lastServerPanelHidden = panelHidden;
+      setPanelHidden(panelHidden, { skipPost: true });
+    }
+    if (themeChanged) {
+      lastServerTheme = theme;
+      applyTheme(theme, { skipPost: true });
+    }
+  }
+
+  function startSSE() {
+    if (sseSource) { sseSource.close(); sseSource = null; }
+    const src = new EventSource(`${window.location.origin}/api/events`);
+    sseSource = src;
+
+    src.onmessage = (e) => {
+      try { applyServerState(JSON.parse(e.data)); } catch {}
+      // SSE alive — stop any fallback poll
+      clearInterval(fallbackTimer);
+      fallbackTimer = null;
+    };
+
+    src.onerror = () => {
+      src.close();
+      sseSource = null;
+      // Start fallback poll while SSE is down
+      if (!fallbackTimer) {
+        fallbackTimer = setInterval(fallbackPoll, FALLBACK_MS);
+      }
+      // Retry SSE after 5 s
+      setTimeout(() => {
+        if (document.visibilityState !== 'hidden') startSSE();
+      }, 5000);
+    };
+  }
+
+  function fallbackPoll() {
     fetch(API, { cache: 'no-store' })
-      .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
-      .then(({ status, customMessage, panelHidden, theme }) => {
-        if (!status) return;
-        // Normalise so undefined/null/'' all compare as ''
-        const msg = customMessage || '';
+      .then((r) => r.json())
+      .then(applyServerState)
+      .catch(() => {});
+  }
 
-        // Check what changed
-        const statusChanged = status && status !== lastServerStatus;
-        const msgChanged    = msg !== (lastServerMessage || '');
-        const panelChanged  = panelHidden !== undefined && panelHidden !== lastServerPanelHidden;
-        const themeChanged  = theme && theme !== lastServerTheme;
+  function pauseUpdates() {
+    if (sseSource) { sseSource.close(); sseSource = null; }
+    clearInterval(fallbackTimer);
+    fallbackTimer = null;
+  }
 
-        // Update status if changed
-        if (statusChanged || msgChanged) {
-          lastServerStatus = status;
-          lastServerMessage = msg;
-          applyStatus(status, { skipPost: true, skipAutoReset: true, customMessage: lastServerMessage });
-        }
-
-        // Update panel visibility if changed
-        if (panelChanged) {
-          lastServerPanelHidden = panelHidden;
-          setPanelHidden(panelHidden, { skipPost: true });
-        }
-
-        // Update theme if changed
-        if (themeChanged) {
-          lastServerTheme = theme;
-          applyTheme(theme, { skipPost: true });
-        }
-      })
-      .catch(() => { /* offline — keep showing last known status */ });
+  function resumeUpdates() {
+    fallbackPoll(); // catch up immediately
+    startSSE();
   }
 
   // ── Status grid ───────────────────────────────────────────────────────────
@@ -398,10 +439,19 @@
           applyStatus('available', { skipPost: true });
         })
         .finally(() => {
-          // Reveal display only after real state is painted — eliminates initial flash
           document.getElementById('display').removeAttribute('data-loading');
-          setInterval(pollStatus, 1500);
+          // Open SSE stream — replaces the old 1.5 s poll entirely
+          startSSE();
         });
+
+      // Pause SSE when tab goes to background; resume (with catch-up fetch) when it returns
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') {
+          pauseUpdates();
+        } else {
+          resumeUpdates();
+        }
+      });
     } else {
       // Standalone mode: use localStorage
       const savedTheme  = localStorage.getItem(STORAGE_KEYS.theme)  || 'light';
@@ -411,7 +461,6 @@
       applyTheme(savedTheme);
       setPanelHidden(panelHidden);
       applyStatus(saved, { skipAutoReset: true });
-      // No server fetch needed — reveal immediately
       document.getElementById('display').removeAttribute('data-loading');
     }
 

@@ -51,18 +51,45 @@ function localIP() {
   return '127.0.0.1';
 }
 
+// ── SSE client registry ───────────────────────────────────────────────────────
+// Keeps track of all open SSE connections so we can push to all of them
+// whenever state changes — zero polling, one persistent connection per client.
+const sseClients = new Set();
+
+function broadcast(data) {
+  const payload = `data: ${JSON.stringify(data)}\n\n`;
+  for (const res of sseClients) {
+    try { res.write(payload); } catch { sseClients.delete(res); }
+  }
+}
+
 // ── Request handler ───────────────────────────────────────────────────────────
 const server = http.createServer((req, res) => {
-  // CORS — needed when testing from different origins on the same network
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
 
-  // ── GET /api/status ───────────────────────────────────────────────────────
+  // ── GET /api/events  — Server-Sent Events stream ──────────────────────────
+  // Clients connect once; state changes are pushed to them instantly.
+  if (req.method === 'GET' && req.url === '/api/events') {
+    res.writeHead(200, {
+      'Content-Type':  'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection':    'keep-alive',
+      'X-Accel-Buffering': 'no'   // disable nginx / proxy buffering
+    });
+    // Send current state immediately so the client doesn't wait for a change
+    res.write(`data: ${JSON.stringify(state)}\n\n`);
+    sseClients.add(res);
+    req.on('close', () => sseClients.delete(res));
+    return;
+  }
+
+  // ── GET /api/status  — one-shot JSON (used as SSE fallback) ──────────────
   if (req.method === 'GET' && req.url === '/api/status') {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
     res.end(JSON.stringify(state));
     return;
   }
@@ -75,13 +102,14 @@ const server = http.createServer((req, res) => {
       try {
         const parsed = JSON.parse(body);
         if (parsed.status !== undefined || parsed.panelHidden !== undefined || parsed.theme !== undefined) {
-          // Update only the fields that are provided
-          if (parsed.status !== undefined) state.status = parsed.status;
+          if (parsed.status        !== undefined) state.status        = parsed.status;
           if (parsed.customMessage !== undefined) state.customMessage = parsed.customMessage;
-          if (parsed.panelHidden !== undefined) state.panelHidden = parsed.panelHidden;
-          if (parsed.theme !== undefined) state.theme = parsed.theme;
-          
+          if (parsed.panelHidden   !== undefined) state.panelHidden   = parsed.panelHidden;
+          if (parsed.theme         !== undefined) state.theme         = parsed.theme;
+
           writeStatus(state);
+          broadcast(state);           // push to all SSE clients instantly
+
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify(state));
         } else {
