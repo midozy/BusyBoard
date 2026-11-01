@@ -124,7 +124,9 @@
 
   let sseSource     = null;
   let fallbackTimer = null;
-  const FALLBACK_MS = 10000;
+  let sseFailCount  = 0;
+  const FALLBACK_MS   = 30000;  // 30 s poll — fine for a door sign
+  const SSE_MAX_FAILS = 3;      // give up on SSE after 3 quick errors (serverless env)
 
   function applyServerState({ status, customMessage, panelHidden, theme }) {
     if (!status) return;
@@ -157,7 +159,7 @@
 
     src.onmessage = (e) => {
       try { applyServerState(JSON.parse(e.data)); } catch {}
-      // SSE alive — stop any fallback poll
+      sseFailCount = 0;                   // successful message — reset failure counter
       clearInterval(fallbackTimer);
       fallbackTimer = null;
     };
@@ -165,11 +167,17 @@
     src.onerror = () => {
       src.close();
       sseSource = null;
-      // Start fallback poll while SSE is down
-      if (!fallbackTimer) {
-        fallbackTimer = setInterval(fallbackPoll, FALLBACK_MS);
+      sseFailCount++;
+
+      if (sseFailCount >= SSE_MAX_FAILS) {
+        // SSE is not supported in this environment (e.g. Vercel serverless).
+        // Switch permanently to a 30 s poll — no more retry spam.
+        if (!fallbackTimer) fallbackTimer = setInterval(fallbackPoll, FALLBACK_MS);
+        return;
       }
-      // Retry SSE after 5 s
+
+      // Transient error — start fallback poll and retry SSE after 5 s
+      if (!fallbackTimer) fallbackTimer = setInterval(fallbackPoll, FALLBACK_MS);
       setTimeout(() => {
         if (document.visibilityState !== 'hidden') startSSE();
       }, 5000);

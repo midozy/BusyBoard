@@ -37,7 +37,7 @@ module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  res.setHeader('Cache-Control', 'no-store');
+  // Cache-Control is set per-method below (GET gets edge caching, POST stays no-store)
 
   if (req.method === 'OPTIONS') {
     res.status(204).end();
@@ -52,12 +52,18 @@ module.exports = async (req, res) => {
   try {
     // GET /api/status
     if (req.method === 'GET') {
-      res.status(200).json(await loadState());
+      const state = await loadState();
+      // Let the CDN edge cache this for 5 s and serve stale up to 30 s while
+      // revalidating — collapses N simultaneous client polls into 1 origin hit.
+      // POST responses stay no-store so writes are never cached.
+      res.setHeader('Cache-Control', 'public, s-maxage=5, stale-while-revalidate=30');
+      res.status(200).json(state);
       return;
     }
 
     // POST /api/status
     if (req.method === 'POST') {
+      res.setHeader('Cache-Control', 'no-store');
       const { status, customMessage, panelHidden, theme } = req.body || {};
 
       if (status === undefined && panelHidden === undefined && theme === undefined) {
